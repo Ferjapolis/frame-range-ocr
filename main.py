@@ -3,6 +3,7 @@ from os import listdir
 from os.path import isdir, join, splitext
 import json
 import sys
+import xml.etree.ElementTree as ET
 
 def scan_rect(image, rect = None):
   p = image.load()
@@ -62,6 +63,42 @@ def recognize(E, path):
     number = number * 10 + E[e]
   return number
 
+def fuse(data):
+  info = {}
+  print("Reading station locations")
+  xml_root = ET.parse('radar.xml').getroot()
+  print(str(xml_root))
+  for child in xml_root:
+    attrs = child.attrib
+    id = attrs['id'][1:]
+    info[id] = {
+      "lat": attrs['y'],
+      "lng": attrs['x'],
+      "pn" : attrs['pn']
+    }
+  print("Find %d locations" % (len(info)))
+  print("Find %d ranges" % (len(data)))
+  no_loc_count = 0
+  update_count = 0
+  for id in data:
+    if info.has_key(id):
+      info[id]['range'] = data[id]
+      update_count += 1
+    else:
+      no_loc_count += 1
+      print("Station %s has range but no location" % (id))
+  print("Update %d stations" % (update_count))
+  to_remove = []
+  for id in info:
+    if not info[id].has_key('range'):
+      print("Station %s has location but no range" % (id))
+      to_remove.append(id)
+  for id in to_remove:
+    del info[id]
+
+  print("Load total %d station inforamtion" % (len(info)))
+  return info
+
 def main(data_root, output):
   E = build_eigen_map()
 
@@ -91,7 +128,7 @@ def main(data_root, output):
 
   print "Found %d frames for %d stations. %d OCR failure." % (frame_count, station_count, fail_count)
 
-  content = json.dumps(results)
+  content = json.dumps(fuse(results))
   with open(output, 'w+') as f:
     f.write(content)
 
@@ -99,13 +136,13 @@ def main(data_root, output):
 
 if __name__ == '__main__':
   data_root = "../data"
-  output = "range.json"
+  output = "fusion.json"
   if len(sys.argv) != 3:
     print "Usage:"
     print "  main.py data_root output"
     print "Use default args:"
     print "  data_root = ../data"
-    print "  output    = range.json"
+    print "  output    = fusion.json"
   else:
     data_root = sys.argv[1]
     output = sys.argv[2]
